@@ -1,0 +1,21 @@
+{
+  "name": "downloadProject",
+  "allowedUsers": ["admin", "user"],
+  "tasks": [
+    {
+      "type": "download",
+      "url": "https://www.w3.org/TR/PNG/iso_8859-1.txt",
+      "dest": "./downloads/sample.txt"
+    },
+    {
+      "type": "rename",
+      "from": "./downloads/sample.txt",
+      "to": "./downloads/sample-renamed.txt"
+    }
+  ],
+  "schedule": {
+    "delay": 5000,
+    "interval": 10000,
+    "repeatTimes": 2
+  }
+}

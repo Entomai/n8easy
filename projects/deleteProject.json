@@ -1,0 +1,13 @@
+{
+  "name": "deleteProject",
+  "allowedUsers": ["admin", "user"],
+  "tasks": [
+    {
+      "type": "deleteTrash"
+    }
+  ],
+  "schedule": {
+    "delay": 0,
+    "repeatTimes": 1
+  }
+}

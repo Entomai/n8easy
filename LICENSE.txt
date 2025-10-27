@@ -1,0 +1,22 @@
+Node Automation Easy – License Information
+Personal vs. Commercial Use
+
+Node Automation Easy (sometimes referred to as n8easy Desktop Automation) is provided free of charge for personal, non‑commercial use. You may download, run and modify this software for your own projects at home or for personal learning without obtaining any license beyond the one distributed with the software.
+
+For commercial use—including use within a business, organization or any context that generates revenue—you must obtain a commercial license from n8easy. Commercial licenses are sold and managed through our licensing portal at control.entomai.com
+. Using this software in a commercial setting without a valid n8easy license is not permitted.
+
+Inspiration and Independence from n8n
+
+The Node Automation Easy project takes inspiration from the open source workflow platform n8n, which is reflected in its name (“Node Automation Easy”). However, this project is not affiliated with, endorsed by, or commercially associated with n8n.io or any other third‑party workflow automation platform. Node Automation Easy is focused on desktop automation (mouse clicks, keyboard input, local file operations, task scheduling), and does not include cloud/API integrations.
+
+While some architectural ideas or coding patterns may resemble those found in n8n, the source code and logic in this project were written independently. We have taken care to ensure that our implementation and design are distinct, and any similarity is due solely to the inspiration rather than direct copying. Node Automation Easy does not commercialize or resell n8n; it is a separate, standalone tool.
+
+Warranty Disclaimer
+
+This software is provided “as is”, without warranty of any kind, express or implied. In no event shall the authors or copyright holders be liable for any claim, damages or other liability arising from the use of this software.
+
+Licensing Questions
+
+If you have questions about personal vs. commercial usage, or need assistance with obtaining a commercial license, please contact n8easy support or visit the licensing portal at control.entomai.com
+.

@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>n8easy Desktop Automation</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-900">
+  <div class="max-w-6xl mx-auto p-4 space-y-4">
+    <header class="flex items-center justify-between">
+      <h1 class="text-2xl font-bold">n8easy</h1>
+      <span id="login-user" class="text-sm text-gray-500"></span>
+    </header>
+
+    <nav class="flex gap-2">
+      <button class="tab px-3 py-2 rounded bg-blue-600 text-white" data-tab="files">Login & Archivos</button>
+      <button class="tab px-3 py-2 rounded bg-gray-200" data-tab="license">License / Auth</button>
+      <button class="tab px-3 py-2 rounded bg-gray-200" data-tab="insights">Insights</button>
+    </nav>
+
+    <!-- Files/Login -->
+    <section id="tab-files" class="bg-white rounded p-4 shadow space-y-4">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="space-y-3">
+          <h2 class="font-semibold">Autenticación</h2>
+          <div class="space-y-2">
+            <input id="username" class="w-full border rounded px-2 py-1" placeholder="Usuario" />
+            <input id="password" type="password" class="w-full border rounded px-2 py-1" placeholder="Contraseña" />
+            <div class="flex gap-2">
+              <button id="btn-register" class="px-3 py-1 bg-emerald-600 text-white rounded">Registrar</button>
+              <button id="btn-login" class="px-3 py-1 bg-blue-600 text-white rounded">Login</button>
+            </div>
+            <p id="auth-msg" class="text-sm text-gray-500"></p>
+          </div>
+
+          <div class="space-y-2">
+            <h3 class="font-semibold">Workflows</h3>
+            <ul id="wf-list" class="text-sm border rounded p-2 h-48 overflow-auto"></ul>
+            <h3 class="font-semibold">Projects</h3>
+            <ul id="pr-list" class="text-sm border rounded p-2 h-48 overflow-auto"></ul>
+          </div>
+        </div>
+
+        <div class="md:col-span-2 space-y-3">
+          <h2 class="font-semibold">Editor JSON</h2>
+          <div class="text-sm text-gray-500" id="file-meta"></div>
+          <textarea id="editor" class="w-full h-96 border rounded p-2 font-mono text-sm"></textarea>
+          <div class="flex gap-2">
+            <button id="btn-save" class="px-3 py-1 bg-indigo-600 text-white rounded">Guardar (crea history)</button>
+            <span id="save-msg" class="text-sm text-gray-500"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- License -->
+    <section id="tab-license" class="hidden bg-white rounded p-4 shadow space-y-4">
+      <h2 class="font-semibold">Estado de licencia</h2>
+      <pre id="license-status" class="bg-gray-50 border rounded p-2 text-xs"></pre>
+
+      <div class="space-y-2">
+        <h3 class="font-semibold">Solicitar licencia</h3>
+        <p class="text-sm text-gray-600">Si la API no está deshabilitada, usa el botón para abrir control.entomai.com con tu MachineID.</p>
+        <button id="btn-open-license" class="px-3 py-1 bg-blue-600 text-white rounded" disabled>Abrir control.entomai.com</button>
+      </div>
+
+      <div class="space-y-2">
+        <h3 class="font-semibold">Pegar licencia manual</h3>
+        <textarea id="license-json" class="w-full h-40 border rounded p-2 font-mono text-xs" placeholder='{"issuer":"n8easy","product":"...","licenseFeatures":{...}}'></textarea>
+        <div class="flex gap-2">
+          <button id="btn-submit-license" class="px-3 py-1 bg-emerald-600 text-white rounded">Guardar licencia</button>
+          <span id="license-msg" class="text-sm text-gray-500"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Insights -->
+    <section id="tab-insights" class="hidden bg-white rounded p-4 shadow space-y-4">
+      <div class="flex items-end gap-2">
+        <h2 class="font-semibold">Insights Dashboard</h2>
+        <label class="text-sm text-gray-600">Días:
+          <input id="ins-days" type="number" min="1" value="7" class="border rounded px-2 py-1 w-20 ml-1" />
+        </label>
+        <button id="btn-refresh-ins" class="px-3 py-1 bg-blue-600 text-white rounded">Actualizar</button>
+        <span id="ins-msg" class="text-sm text-gray-500"></span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="p-3 border rounded">
+          <h3 class="font-semibold mb-2">Totales</h3>
+          <ul id="ins-totals" class="text-sm space-y-1"></ul>
+        </div>
+        <div class="p-3 border rounded md:col-span-2">
+          <h3 class="font-semibold mb-2">Por Día</h3>
+          <canvas id="chart-day" height="120"></canvas>
+        </div>
+        <div class="p-3 border rounded md:col-span-3">
+          <h3 class="font-semibold mb-2">Por Hora (UTC)</h3>
+          <canvas id="chart-hour" height="120"></canvas>
+        </div>
+      </div>
+    </section>
+  </div>
+
+<script>
+let TOKEN = null;
+let CURRENT_FILE = null;
+let CURRENT_KIND = null;
+
+function setActive(tab) {
+  for (const b of document.querySelectorAll('.tab')) {
+    b.classList.toggle('bg-blue-600', b.dataset.tab === tab);
+    b.classList.toggle('text-white', b.dataset.tab === tab);
+    b.classList.toggle('bg-gray-200', b.dataset.tab !== tab);
+  }
+  for (const sec of [
+    ['files', 'tab-files'],
+    ['license', 'tab-license'],
+    ['insights', 'tab-insights'],
+  ]) {
+    document.getElementById(sec[1]).classList.toggle('hidden', sec[0] !== tab);
+  }
+}
+
+async function api(path, opts = {}) {
+  const headers = opts.headers || {};
+  if (TOKEN) headers['x-auth-token'] = TOKEN;
+  return fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...headers } });
+}
+
+// Tabs
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => setActive(b.dataset.tab)));
+
+// Auth
+const authMsg = document.getElementById('auth-msg');
+document.getElementById('btn-register').onclick = async () => {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value.trim();
+  const r = await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ username, password }) });
+  const j = await r.json();
+  if (r.ok) {
+    TOKEN = j.token;
+    document.getElementById('login-user').textContent = `Conectado como ${j.username}`;
+    authMsg.textContent = 'Registro OK';
+    loadLists();
+    loadLicenseStatus();
+  } else authMsg.textContent = j.error || 'Error';
+};
+
+document.getElementById('btn-login').onclick = async () => {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value.trim();
+  const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+  const j = await r.json();
+  if (r.ok) {
+    TOKEN = j.token;
+    document.getElementById('login-user').textContent = `Conectado como ${j.username}`;
+    authMsg.textContent = 'Login OK';
+    loadLists();
+    loadLicenseStatus();
+  } else authMsg.textContent = j.error || 'Error';
+};
+
+// Lists
+async function loadLists() {
+  const wf = await api('/api/workflows');
+  const pr = await api('/api/projects');
+  const wl = document.getElementById('wf-list'); wl.innerHTML = '';
+  const pl = document.getElementById('pr-list'); pl.innerHTML = '';
+  if (wf.ok) (await wf.json()).forEach(f => {
+    const li = document.createElement('li'); li.className='flex items-center justify-between gap-2';
+    li.innerHTML = `<span>${f.name}</span><button class="px-2 py-0.5 text-xs bg-gray-200 rounded">Editar</button>`;
+    li.querySelector('button').onclick = () => openFile('workflows', f.name);
+    wl.appendChild(li);
+  });
+  if (pr.ok) (await pr.json()).forEach(f => {
+    const li = document.createElement('li'); li.className='flex items-center justify-between gap-2';
+    li.innerHTML = `<span>${f.name}</span><button class="px-2 py-0.5 text-xs bg-gray-200 rounded">Editar</button>`;
+    li.querySelector('button').onclick = () => openFile('projects', f.name);
+    pl.appendChild(li);
+  });
+}
+
+async function openFile(kind, name) {
+  const r = await api(`/api/file?kind=${encodeURIComponent(kind)}&file=${encodeURIComponent(name)}`);
+  const j = await r.json();
+  if (!r.ok) return alert(j.error || 'No se pudo abrir');
+  CURRENT_KIND = kind; CURRENT_FILE = name;
+  document.getElementById('file-meta').textContent = `${kind}/${name}`;
+  document.getElementById('editor').value = JSON.stringify(j.content, null, 2);
+}
+
+// Save
+document.getElementById('btn-save').onclick = async () => {
+  if (!CURRENT_FILE || !CURRENT_KIND) return;
+  let content = null; const saveMsg = document.getElementById('save-msg');
+  try { content = JSON.parse(document.getElementById('editor').value); }
+  catch { saveMsg.textContent = 'JSON inválido'; return; }
+  const r = await api('/api/file', { method: 'POST', body: JSON.stringify({ file: CURRENT_FILE, kind: CURRENT_KIND, content }) });
+  const j = await r.json();
+  saveMsg.textContent = r.ok ? 'Guardado + history OK' : (j.error || 'Error');
+  setTimeout(() => saveMsg.textContent = '', 2000);
+};
+
+// License tab
+async function loadLicenseStatus() {
+  const r = await api('/api/license/status');
+  const j = await r.json();
+  document.getElementById('license-status').textContent = JSON.stringify(j, null, 2);
+  const btn = document.getElementById('btn-open-license');
+  btn.disabled = !(j.allowRemoteRequest && j.requestUrl);
+  btn.onclick = () => { if (j.requestUrl) window.open(j.requestUrl, '_blank'); };
+}
+document.getElementById('btn-submit-license').onclick = async () => {
+  const txt = document.getElementById('license-json').value;
+  try {
+    const obj = JSON.parse(txt);
+    const r = await api('/api/license/submit', { method: 'POST', body: JSON.stringify(obj) });
+    const j = await r.json();
+    document.getElementById('license-msg').textContent = r.ok ? 'Licencia guardada.' : (j.error || 'Error');
+    loadLicenseStatus();
+  } catch { document.getElementById('license-msg').textContent = 'JSON inválido'; }
+};
+
+// Insights
+function renderChart(ctx, labels, data) {
+  if (ctx._chart) ctx._chart.destroy();
+  ctx._chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets: [{ label: 'Ejecuciones', data }] },
+    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+  });
+}
+document.getElementById('btn-refresh-ins').onclick = async () => {
+  const days = parseInt(document.getElementById('ins-days').value || '7', 10);
+  const r = await api(`/api/insights?days=${days}`);
+  const j = await r.json();
+  const msg = document.getElementById('ins-msg');
+  if (!r.ok) { msg.textContent = j.error || 'Error'; return; }
+  msg.textContent = '';
+  // Totales
+  const UL = document.getElementById('ins-totals'); UL.innerHTML = '';
+  if (j.allowed.summary && j.totals) {
+    for (const [k,v] of Object.entries(j.totals)) {
+      const li = document.createElement('li'); li.textContent = `${k}: ${v}`; UL.appendChild(li);
+    }
+  } else {
+    UL.innerHTML = '<li class="text-gray-500">Sin permiso para resumen</li>';
+  }
+  // Día
+  const dayLabels = j.byDay ? Object.keys(j.byDay) : [];
+  const dayData = j.byDay ? Object.values(j.byDay) : [];
+  renderChart(document.getElementById('chart-day'), dayLabels, dayData);
+  // Hora
+  if (j.allowed.hourly && j.byHour) {
+    const hours = [...Array(24)].map((_,i)=>i);
+    const hourData = hours.map(h => j.byHour[String(h)] || j.byHour[h] || 0);
+    renderChart(document.getElementById('chart-hour'), hours, hourData);
+  } else {
+    renderChart(document.getElementById('chart-hour'), [], []);
+  }
+};
+
+// default tab
+setActive('files');
+</script>
+</body>
+</html>

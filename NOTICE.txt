@@ -1,0 +1,30 @@
+n8easy Desktop Automation Platform
+Copyright © 2025 Entomai. All rights reserved.
+
+LEGAL NOTICES:
+
+1. TRADEMARK NOTICE
+   n8easy and the n8easy logo are trademarks of n8easy.
+   All other trademarks are property of their respective owners.
+
+2. NO AFFILIATION
+   n8easy is not affiliated with, endorsed by, or related to:
+   - n8n.io or n8n GmbH
+   - Zapier Inc.
+   - Celonis (Make/Integromat)
+   - Any other automation platform
+
+3. THIRD-PARTY SOFTWARE
+   This software may include components licensed under:
+   - MIT License (see licenses/MIT.txt)
+   - Apache License 2.0 (see licenses/APACHE-2.0.txt)
+   - Other open source licenses (see licenses/)
+
+4. LICENSE INTEGRITY
+   License files use the proprietary "n8e:" namespace.
+   Any modification voids your license immediately.
+
+5. REPORTING VIOLATIONS
+   Report license violations to: legal@n8easy.com
+
+For questions: support@n8easy.com
