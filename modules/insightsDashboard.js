@@ -60,8 +60,20 @@ export async function getInsights(license, { days = 7 } = {}) {
   const allowSummary = license.hasFeature(LICENSE_FEATURES.INSIGHTS_VIEW_SUMMARY);
   const allowDashboard = license.hasFeature(LICENSE_FEATURES.INSIGHTS_VIEW_DASHBOARD);
   const allowHourly = license.hasFeature(LICENSE_FEATURES.INSIGHTS_VIEW_HOURLY_DATA);
-  // Clamp days to quota
-  const maxDays = license.getQuota('n8e:limit:analytics:historyDays') ?? 14;
+  // Determine maximum history based on license quotas. Prefer the analytics
+  // historyDays quota, but also respect the general history prune limit (hours).
+  const maxDaysQuota = license.getQuota('n8e:limit:analytics:historyDays') ?? 14;
+  const pruneHours = license.getQuota('n8e:limit:historyPrune');
+  // Convert prune hours to days if defined, flooring the result. If pruneHours is
+  // very small (<24), this yields 0; treat undefined as unlimited.
+  let pruneDays;
+  if (typeof pruneHours === 'number') {
+    pruneDays = Math.floor(pruneHours / 24);
+    if (pruneDays < 1) pruneDays = 1;
+  } else {
+    pruneDays = undefined;
+  }
+  const maxDays = pruneDays ? Math.min(maxDaysQuota, pruneDays) : maxDaysQuota;
   const clampDays = Math.max(1, Math.min(days, maxDays));
   const since = Date.now() - clampDays * 24 * 3600 * 1000;
   let arr;

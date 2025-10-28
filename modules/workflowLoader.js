@@ -25,13 +25,15 @@ export async function loadWorkflows() {
   const workflows = [];
   for (const file of entries) {
     if (!file.endsWith('.json')) continue;
-    // Join using the directory path (string) and file name. Because
-    // WORKFLOWS_DIR is a normalized file system path (not a URL), this will
-    // construct correct paths on both POSIX and Windows systems.
     const filePath = path.join(WORKFLOWS_DIR, file);
     const content = await fs.readFile(filePath, 'utf8');
     try {
       const data = JSON.parse(content);
+      // Include the filename (without extension) as the name property so the UI
+      // can reference and open the workflow file. Existing name fields are
+      // preserved if already defined.
+      const baseName = path.basename(file, '.json');
+      if (!data.name) data.name = baseName;
       workflows.push(data);
     } catch (err) {
       console.warn(`Failed to parse workflow '${file}': ${err.message}`);

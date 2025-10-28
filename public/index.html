@@ -40,6 +40,11 @@
             <ul id="wf-list" class="text-sm border rounded p-2 h-48 overflow-auto"></ul>
             <h3 class="font-semibold">Projects</h3>
             <ul id="pr-list" class="text-sm border rounded p-2 h-48 overflow-auto"></ul>
+
+        <div class="flex gap-2 mt-2">
+          <button id="btn-new-wf" class="px-2 py-1 text-xs bg-green-600 text-white rounded">Nuevo Workflow</button>
+          <button id="btn-new-pr" class="px-2 py-1 text-xs bg-green-600 text-white rounded">Nuevo Proyecto</button>
+        </div>
           </div>
         </div>
 
@@ -74,6 +79,16 @@
           <span id="license-msg" class="text-sm text-gray-500"></span>
         </div>
       </div>
+
+      <!-- License activation via key -->
+      <div class="space-y-2">
+        <h3 class="font-semibold">Activar con clave</h3>
+        <input id="license-key" class="w-full border rounded px-2 py-1" placeholder="Clave de licencia" />
+        <div class="flex gap-2">
+          <button id="btn-activate-license" class="px-3 py-1 bg-blue-600 text-white rounded">Activar licencia</button>
+          <span id="activate-msg" class="text-sm text-gray-500"></span>
+        </div>
+      </div>
     </section>
 
     <!-- Insights -->
@@ -81,7 +96,15 @@
       <div class="flex items-end gap-2">
         <h2 class="font-semibold">Insights Dashboard</h2>
         <label class="text-sm text-gray-600">Días:
-          <input id="ins-days" type="number" min="1" value="7" class="border rounded px-2 py-1 w-20 ml-1" />
+          <select id="ins-days" class="border rounded px-2 py-1 w-24 ml-1">
+            <option value="7">7</option>
+            <option value="14">14</option>
+            <option value="30">30</option>
+            <option value="60">60</option>
+            <option value="90">90</option>
+            <option value="180">180</option>
+            <option value="365">365</option>
+          </select>
         </label>
         <button id="btn-refresh-ins" class="px-3 py-1 bg-blue-600 text-white rounded">Actualizar</button>
         <span id="ins-msg" class="text-sm text-gray-500"></span>
@@ -108,6 +131,74 @@
 let TOKEN = null;
 let CURRENT_FILE = null;
 let CURRENT_KIND = null;
+
+// Update the available options for the insights days selector based on the
+// maximum allowed days derived from the license quotas. Options greater
+// than maxDays will be removed. Always retains at least one option.
+function updateInsightsOptions(maxDays) {
+  const select = document.getElementById('ins-days');
+  if (!select) return;
+  const choices = [7, 14, 30, 60, 90, 180, 365];
+  select.innerHTML = '';
+  choices.filter((d) => d <= maxDays).forEach((d) => {
+    const opt = document.createElement('option');
+    opt.value = d;
+    opt.textContent = d;
+    select.appendChild(opt);
+  });
+  // If no option fits (maxDays smaller than smallest choice), include maxDays
+  if (select.options.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = maxDays;
+    opt.textContent = maxDays;
+    select.appendChild(opt);
+  }
+}
+
+// Run a workflow or project by name. Sends a POST to /api/run with the kind
+// ('workflows' or 'projects') and name. Displays a notification on success
+// or error. Running may take time depending on workflow tasks.
+async function runFile(kind, name) {
+  const msg = document.getElementById('ins-msg') || { textContent: '' };
+  try {
+    const r = await api('/api/run', { method: 'POST', body: JSON.stringify({ kind, name }) });
+    const j = await r.json();
+    if (!r.ok) {
+      alert(j.error || 'Error al ejecutar');
+      return;
+    }
+    alert(j.message || 'Ejecución completa');
+  } catch (err) {
+    alert('Error al ejecutar');
+  }
+}
+
+// Create a new file (workflow or project). Prompts the user for a name and
+// writes a basic JSON skeleton. After creation, reloads the lists and
+// opens the newly created file for editing.
+async function createNewFile(kind) {
+  const rawName = prompt('Nombre del ' + (kind === 'workflows' ? 'workflow' : 'proyecto') + ':');
+  if (!rawName) return;
+  const name = rawName.trim();
+  if (!name) return;
+  // Define a minimal skeleton
+  let content;
+  if (kind === 'workflows') {
+    content = { type: '', clicks: [] };
+  } else {
+    content = { name, allowedUsers: [], tasks: [], schedule: {} };
+  }
+  // Save the new file via API
+  const r = await api('/api/file', { method: 'POST', body: JSON.stringify({ file: name, kind, content }) });
+  const j = await r.json();
+  if (!r.ok) {
+    alert(j.error || 'No se pudo crear el archivo');
+    return;
+  }
+  // Reload lists and open the new file
+  await loadLists();
+  openFile(kind, name);
+}
 
 function setActive(tab) {
   for (const b of document.querySelectorAll('.tab')) {
@@ -169,18 +260,34 @@ async function loadLists() {
   const pr = await api('/api/projects');
   const wl = document.getElementById('wf-list'); wl.innerHTML = '';
   const pl = document.getElementById('pr-list'); pl.innerHTML = '';
-  if (wf.ok) (await wf.json()).forEach(f => {
-    const li = document.createElement('li'); li.className='flex items-center justify-between gap-2';
-    li.innerHTML = `<span>${f.name}</span><button class="px-2 py-0.5 text-xs bg-gray-200 rounded">Editar</button>`;
-    li.querySelector('button').onclick = () => openFile('workflows', f.name);
-    wl.appendChild(li);
-  });
-  if (pr.ok) (await pr.json()).forEach(f => {
-    const li = document.createElement('li'); li.className='flex items-center justify-between gap-2';
-    li.innerHTML = `<span>${f.name}</span><button class="px-2 py-0.5 text-xs bg-gray-200 rounded">Editar</button>`;
-    li.querySelector('button').onclick = () => openFile('projects', f.name);
-    pl.appendChild(li);
-  });
+  if (wf.ok) {
+    const wfs = await wf.json();
+    wfs.forEach(f => {
+      const li = document.createElement('li');
+      li.className = 'flex items-center justify-between gap-2';
+      const nm = f.name || '(sin nombre)';
+      li.innerHTML = `<span>${nm}</span><div class="flex gap-1"><button class="edit-btn px-2 py-0.5 text-xs bg-gray-200 rounded">Editar</button><button class="run-btn px-2 py-0.5 text-xs bg-emerald-500 text-white rounded">Ejecutar</button></div>`;
+      const editBtn = li.querySelector('.edit-btn');
+      const runBtn = li.querySelector('.run-btn');
+      editBtn.onclick = () => openFile('workflows', f.name);
+      runBtn.onclick = () => runFile('workflows', f.name);
+      wl.appendChild(li);
+    });
+  }
+  if (pr.ok) {
+    const prjs = await pr.json();
+    prjs.forEach(f => {
+      const li = document.createElement('li');
+      li.className = 'flex items-center justify-between gap-2';
+      const nm = f.name || '(sin nombre)';
+      li.innerHTML = `<span>${nm}</span><div class="flex gap-1"><button class="edit-btn px-2 py-0.5 text-xs bg-gray-200 rounded">Editar</button><button class="run-btn px-2 py-0.5 text-xs bg-emerald-500 text-white rounded">Ejecutar</button></div>`;
+      const editBtn = li.querySelector('.edit-btn');
+      const runBtn = li.querySelector('.run-btn');
+      editBtn.onclick = () => openFile('projects', f.name);
+      runBtn.onclick = () => runFile('projects', f.name);
+      pl.appendChild(li);
+    });
+  }
 }
 
 async function openFile(kind, name) {
@@ -212,6 +319,22 @@ async function loadLicenseStatus() {
   const btn = document.getElementById('btn-open-license');
   btn.disabled = !(j.allowRemoteRequest && j.requestUrl);
   btn.onclick = () => { if (j.requestUrl) window.open(j.requestUrl, '_blank'); };
+
+  // Update insights day selector based on license quotas. Use the lesser of
+  // analytics history days and history prune hours (converted to days).
+  try {
+    const pruneHours = j.quotas && typeof j.quotas.historyPruneHours === 'number' ? j.quotas.historyPruneHours : undefined;
+    const insightsDays = j.quotas && typeof j.quotas.insightsHistoryDays === 'number' ? j.quotas.insightsHistoryDays : 14;
+    let pruneDays;
+    if (pruneHours !== undefined) {
+      pruneDays = Math.floor(pruneHours / 24);
+      if (pruneDays < 1) pruneDays = 1;
+    }
+    const maxDays = pruneDays ? Math.min(insightsDays, pruneDays) : insightsDays;
+    updateInsightsOptions(maxDays);
+  } catch {
+    // ignore errors
+  }
 }
 document.getElementById('btn-submit-license').onclick = async () => {
   const txt = document.getElementById('license-json').value;
@@ -223,6 +346,36 @@ document.getElementById('btn-submit-license').onclick = async () => {
     loadLicenseStatus();
   } catch { document.getElementById('license-msg').textContent = 'JSON inválido'; }
 };
+
+// Handle license activation using a key. Sends the key to the server and
+// expects a JSON license object or null. On success the license is saved
+// and the status reloaded.
+document.getElementById('btn-activate-license').onclick = async () => {
+  const key = document.getElementById('license-key').value.trim();
+  const msg = document.getElementById('activate-msg');
+  msg.textContent = '';
+  if (!key) {
+    msg.textContent = 'Ingrese la clave';
+    return;
+  }
+  try {
+    const r = await api('/api/license/activate', { method: 'POST', body: JSON.stringify({ key }) });
+    const j = await r.json();
+    if (r.ok && j && j.license) {
+      msg.textContent = 'Licencia activada.';
+      document.getElementById('license-json').value = JSON.stringify(j.license, null, 2);
+      await loadLicenseStatus();
+    } else {
+      msg.textContent = j.error || 'Clave inválida';
+    }
+  } catch (err) {
+    msg.textContent = 'Error al activar';
+  }
+};
+
+// New file buttons
+document.getElementById('btn-new-wf').onclick = () => createNewFile('workflows');
+document.getElementById('btn-new-pr').onclick = () => createNewFile('projects');
 
 // Insights
 function renderChart(ctx, labels, data) {

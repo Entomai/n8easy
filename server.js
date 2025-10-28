@@ -12,6 +12,14 @@ import { loadProjects } from './modules/projectLoader.js';
 import { recordWorkflowEvent, getInsights } from './modules/insightsDashboard.js';
 import { registerUser, authenticateUser } from './modules/users.js';
 
+// Additional imports for new functionality
+import os from 'os';
+import { checkLicense } from './lib/fossbilling.js';
+import executeClicks from './modules/executeClicks.js';
+import executeDeleteWorkflow from './modules/executeDelete.js';
+import downloadFile from './modules/downloadFile.js';
+import renameFile from './modules/renameFile.js';
+
 // Determine root paths for static files and data directories.
 const __ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC_DIR = path.join(__ROOT, 'public');
@@ -55,6 +63,45 @@ function notFound(res) {
 
 function unauthorized(res) {
   sendJSON(res, 401, { error: 'Unauthorized' });
+}
+
+// Run a single workflow definition. Supports simple types defined in
+// modules/executeClicks.js and executeDelete.js. Throws on unknown types.
+async function runSingleWorkflow(def, license) {
+  if (!def || typeof def !== 'object') throw new Error('Invalid workflow definition');
+  const t = def.type;
+  if (t === 'clicks') {
+    if (!Array.isArray(def.clicks)) throw new Error('Workflow clicks missing');
+    await executeClicks(license, def.clicks);
+  } else if (t === 'deleteTrash') {
+    await executeDeleteWorkflow(license);
+  } else {
+    throw new Error(`Tipo de workflow desconocido: ${t}`);
+  }
+}
+
+// Run a project definition. Validates allowedUsers and iterates tasks.
+async function runProjectWorkflows(proj, username, license) {
+  if (!proj || typeof proj !== 'object') throw new Error('Invalid project definition');
+  const { name, allowedUsers = [], tasks = [] } = proj;
+  if (allowedUsers.length > 0 && !allowedUsers.includes(username)) {
+    throw new Error(`Usuario '${username}' no autorizado para el proyecto '${name}'`);
+  }
+  for (const task of tasks) {
+    const type = task.type;
+    if (type === 'clicks') {
+      if (!Array.isArray(task.clicks)) throw new Error('Tarea clicks inválida');
+      await executeClicks(license, task.clicks);
+    } else if (type === 'deleteTrash') {
+      await executeDeleteWorkflow(license);
+    } else if (type === 'download') {
+      await downloadFile(license, { url: task.url, dest: task.dest });
+    } else if (type === 'rename') {
+      await renameFile(license, { from: task.from, to: task.to });
+    } else {
+      throw new Error(`Tipo de tarea desconocida: ${type}`);
+    }
+  }
 }
 
 async function createHistorySnapshot(license, kind, filename, content) {
@@ -147,6 +194,23 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 400, { error: e.message || 'Invalid license' });
     }
   }
+
+  // Activate a license using a license key. This checks against a remote
+  // FOSSBilling instance and, on success, persists the resulting license JSON.
+  if (method === 'POST' && pathname === '/api/license/activate') {
+    try {
+      const { key } = await readBody(req);
+      if (!key) return sendJSON(res, 400, { error: 'Missing license key' });
+      const baseUrl = process.env.FOSS_BILLING_URL;
+      if (!baseUrl) return sendJSON(res, 500, { error: 'FOSS_BILLING_URL not configured' });
+      const result = await checkLicense({ baseUrl, licenseKey: key, host: os.hostname(), version: '1.0.0', path: process.cwd() });
+      if (!result) return sendJSON(res, 200, { license: null, error: 'Invalid license' });
+      await submitLicenseJSON(result);
+      return sendJSON(res, 200, { license: result });
+    } catch (e) {
+      return sendJSON(res, 500, { error: e.message || 'Activation failed' });
+    }
+  }
   // Register
   if (method === 'POST' && pathname === '/api/auth/register') {
     const license = await loadLocalLicense();
@@ -186,21 +250,78 @@ const server = http.createServer(async (req, res) => {
     const list = await loadProjects();
     return sendJSON(res, 200, list);
   }
+
+    // Execute a workflow or project. Requires kind ('workflows' or 'projects')
+    // and the file name (without extension). Executes synchronously and
+    // returns when complete. Records success/failure to workflow logs.
+    if (method === 'POST' && pathname === '/api/run') {
+      try {
+        const { kind, name } = await readBody(req);
+        if (!kind || !name) return sendJSON(res, 400, { error: 'Missing kind or name' });
+        const base = kind === 'workflows' ? WORKFLOWS_DIR : kind === 'projects' ? PROJECTS_DIR : null;
+        if (!base) return sendJSON(res, 400, { error: 'Invalid kind' });
+        // Resolve file paths (with and without .json)
+        const sanitized = path.basename(name);
+        const primary = path.join(base, sanitized);
+        const candidates = [];
+        candidates.push(primary);
+        if (!primary.endsWith('.json')) candidates.push(primary + '.json');
+        let content = null;
+        for (const filePath of candidates) {
+          try {
+            const raw = await fs.readFile(filePath, 'utf8');
+            content = JSON.parse(raw);
+            break;
+          } catch {}
+        }
+        if (!content) return notFound(res);
+        const license = (await loadLocalLicense()) || new License({ licenseFeatures: {} });
+        // Run according to kind
+        if (kind === 'workflows') {
+          await runSingleWorkflow(content, license);
+        } else {
+          const username = sess?.username || null;
+          await runProjectWorkflows(content, username, license);
+        }
+        await recordWorkflowEvent({ name: name || 'unnamed', status: 'success', at: Date.now() });
+        return sendJSON(res, 200, { ok: true, message: 'Ejecutado con éxito' });
+      } catch (e) {
+        // Attempt to record a failure for this execution
+        try {
+          await recordWorkflowEvent({ name: name || 'unknown', status: 'failed', at: Date.now() });
+        } catch {}
+        return sendJSON(res, 500, { error: e.message || 'Execution failed' });
+      }
+    }
   // Read a file (workflow or project)
   if (method === 'GET' && pathname === '/api/file') {
-    const file = url.searchParams.get('file');
+    const fileParam = url.searchParams.get('file');
     const kind = url.searchParams.get('kind');
-    if (!file || !kind) return sendJSON(res, 400, { error: 'Missing params' });
+    if (!fileParam || !kind) return sendJSON(res, 400, { error: 'Missing params' });
     const base = kind === 'workflows' ? WORKFLOWS_DIR : kind === 'projects' ? PROJECTS_DIR : null;
     if (!base) return unauthorized(res);
-    const full = path.join(base, file);
-    if (!full.startsWith(base)) return unauthorized(res);
-    try {
-      const raw = await fs.readFile(full, 'utf8');
-      return sendJSON(res, 200, { file, kind, content: JSON.parse(raw) });
-    } catch {
-      return notFound(res);
+    // Sanitize file path to avoid directory traversal
+    // If the provided file name does not end with .json, attempt both the raw name and the `.json` variant
+    const candidates = [];
+    // Normalize to a file base name to avoid directory traversal
+    const sanitized = path.basename(fileParam);
+    const primary = path.join(base, sanitized);
+    // Only allow reading inside the base directory
+    if (primary.startsWith(base)) {
+      candidates.push(primary);
+      if (!primary.endsWith('.json')) {
+        candidates.push(primary + '.json');
+      }
     }
+    for (const candidate of candidates) {
+      try {
+        const raw = await fs.readFile(candidate, 'utf8');
+        return sendJSON(res, 200, { file: fileParam, kind, content: JSON.parse(raw) });
+      } catch {
+        // try next candidate
+      }
+    }
+    return notFound(res);
   }
   // Save file + history snapshot
   if (method === 'POST' && pathname === '/api/file') {

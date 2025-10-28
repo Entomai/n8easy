@@ -1,0 +1,21 @@
+{
+  "name": "clickWorkflow2",
+  "type": "clicks",
+  "clicks": [
+    {
+      "x": 100,
+      "y": 200,
+      "delay": 500
+    },
+    {
+      "x": 300,
+      "y": 400,
+      "delay": 755
+    },
+    {
+      "x": 250,
+      "y": 150,
+      "delay": 600
+    }
+  ]
+}
