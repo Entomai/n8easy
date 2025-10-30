@@ -13,8 +13,7 @@ import { recordWorkflowEvent, getInsights } from './modules/insightsDashboard.js
 import { registerUser, authenticateUser } from './modules/users.js';
 
 // Additional imports for new functionality
-import os from 'os';
-import { checkLicense } from './lib/fossbilling.js';
+import { activateServiceApiKey } from './lib/serviceApiKeyPortal.js';
 import executeClicks from './modules/executeClicks.js';
 import executeDeleteWorkflow from './modules/executeDelete.js';
 import downloadFile from './modules/downloadFile.js';
@@ -195,20 +194,20 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // Activate a license using a license key. This checks against a remote
-  // FOSSBilling instance and, on success, persists the resulting license JSON.
+  // Activate a license using a service API key. This verifies the key against
+  // the Entomai control portal and, on success, persists the generated license.
   if (method === 'POST' && pathname === '/api/license/activate') {
     try {
       const { key } = await readBody(req);
-      if (!key) return sendJSON(res, 400, { error: 'Missing license key' });
-      const baseUrl = process.env.FOSS_BILLING_URL;
-      if (!baseUrl) return sendJSON(res, 500, { error: 'FOSS_BILLING_URL not configured' });
-      const result = await checkLicense({ baseUrl, licenseKey: key, host: os.hostname(), version: '1.0.0', path: process.cwd() });
-      if (!result) return sendJSON(res, 200, { license: null, error: 'Invalid license' });
-      await submitLicenseJSON(result);
-      return sendJSON(res, 200, { license: result });
+      const trimmedKey = typeof key === 'string' ? key.trim() : '';
+      if (!trimmedKey) return sendJSON(res, 400, { error: 'Missing license key' });
+      const license = await activateServiceApiKey(trimmedKey);
+      await submitLicenseJSON(license);
+      return sendJSON(res, 200, { license });
     } catch (e) {
-      return sendJSON(res, 500, { error: e.message || 'Activation failed' });
+      const message = e?.message || 'Activation failed';
+      const isClientError = typeof e?.code !== 'undefined' || e?.details;
+      return sendJSON(res, isClientError ? 400 : 500, { error: message });
     }
   }
   // Register

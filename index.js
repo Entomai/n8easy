@@ -1,9 +1,8 @@
 import fs from 'fs/promises';
-import os from 'os';
 import readline from 'readline/promises';
 import { stdin as input, stdout as output } from 'process';
 import { License } from './lib/License.js';
-import { checkLicense } from './lib/fossbilling.js';
+import { activateServiceApiKey } from './lib/serviceApiKeyPortal.js';
 
 // User management and workflows
 import { registerUser, authenticateUser } from './modules/users.js';
@@ -15,30 +14,25 @@ import downloadFile from './modules/downloadFile.js';
 import renameFile from './modules/renameFile.js';
 
 /**
- * Load a license from FOSSBilling if environment variables are set, otherwise
- * fall back to the bundled license.json file.
+ * Load a license from the control portal if environment variables are set,
+ * otherwise fall back to the bundled license.json file.
  *
  * Set the following environment variables to enable remote license check:
- *   FOSS_BILLING_URL  Base URL of your FOSSBilling instance
- *   LICENSE_KEY       The license key to validate
+ *   LICENSE_KEY       Service API key issued by control.entomai.com
  *
  * @returns {Promise<License>}
  */
 async function loadLicense() {
-  const { FOSS_BILLING_URL, LICENSE_KEY } = process.env;
-  if (FOSS_BILLING_URL && LICENSE_KEY) {
-    const result = await checkLicense({
-      baseUrl: FOSS_BILLING_URL,
-      licenseKey: LICENSE_KEY,
-      host: os.hostname(),
-      version: '1.0.0',
-      path: process.cwd()
-    });
-    if (result) {
-      console.log('License validated via FOSSBilling.');
+  const { LICENSE_KEY } = process.env;
+  if (LICENSE_KEY) {
+    try {
+      const result = await activateServiceApiKey(LICENSE_KEY);
+      console.log('License generated via control.entomai.com.');
       return new License(result);
+    } catch (err) {
+      console.warn(`Remote license activation failed: ${err.message}`);
+      console.warn('Falling back to local license.json.');
     }
-    console.warn('Remote license check failed; falling back to local license.');
   }
   const json = JSON.parse(await fs.readFile(new URL('./license.json', import.meta.url)));
   console.log('Loaded local license.');
